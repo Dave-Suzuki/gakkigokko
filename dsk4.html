@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Web Drum Machine with Kaoss Pad</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        .drum-machine {
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .sequencer {
+            display: grid;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .sequencer-row {
+            display: flex;
+            align-items: center;
+        }
+        .drum-name {
+            width: 120px;
+            text-align: right;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .step {
+            width: 30px;
+            height: 30px;
+            border: 1px solid #999;
+            background-color: #fff;
+            margin: 2px;
+            cursor: pointer;
+        }
+        .step.active {
+            background-color: #4CAF50;
+        }
+        .step.current {
+            border: 2px solid #ff0000;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        input[type="number"], input[type="range"] {
+            width: 60px;
+            font-size: 16px;
+        }
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 24px;
+            z-index: 1000;
+        }
+        #error-message {
+            color: #FF5252;
+            margin-top: 10px;
+        }
+        .volume-control {
+            display: flex;
+            align-items: center;
+            margin-left: 10px;
+        }
+        .swing-control {
+            display: flex;
+            align-items: center;
+            margin-left: 20px;
+        }
+        .swing-control input {
+            width: 100px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .pattern-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        .pattern-list li {
+            cursor: pointer;
+            padding: 5px;
+            margin: 5px 0;
+            background-color: #f0f0f0;
+        }
+        .pattern-list li:hover {
+            background-color: #e0e0e0;
+        }
+        #kaoss-pad {
+            width: 300px;
+            height: 300px;
+            background-color: #333;
+            position: relative;
+            margin-top: 20px;
+        }
+        #kaoss-cursor {
+            width: 20px;
+            height: 20px;
+            background-color: red;
+            border-radius: 50%;
+            position: absolute;
+            transform: translate(-50%, -50%);
+        }
+    </style>
+</head>
+<body>
+    <div class="drum-machine">
+        <div id="loading-overlay">Loading sound files...</div>
+        <div class="sequencer" id="sequencer"></div>
+        <div class="controls">
+            <button id="playPause">Play</button>
+            <div>
+                <label for="bpm">Tempo:</label>
+                <input type="number" id="bpm" value="120" min="60" max="240">
+            </div>
+            <div class="swing-control">
+                <label for="swing">Swing:</label>
+                <input type="range" id="swing" min="0" max="100" value="0">
+                <span id="swingValue">0%</span>
+            </div>
+            <button id="savePattern">Save Pattern</button>
+            <button id="loadPattern">Load Pattern</button>
+            <button id="clearPattern">Clear Pattern</button>
+        </div>
+        <div id="error-message"></div>
+        <div id="kaoss-pad">
+            <div id="kaoss-cursor"></div>
+        </div>
+    </div>
+
+    <div id="loadPatternModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Load Pattern</h2>
+            <ul id="patternList" class="pattern-list"></ul>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+    <script>
+        const drumSounds = [
+            { name: 'Kick', color: '#FF5252', url: 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/67723/kick.wav' },
+            { name: 'Snare', color: '#FF4081', url: 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/67723/snare.wav' },
+            { name: 'Closed Hi-hat', color: '#E040FB', url: 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/67723/hihat.wav' },
+            { name: 'Open Hi-hat', color: '#7C4DFF', url: 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/67723/openhat.wav' },
+            { name: 'Tom', color: '#00BCD4', url: 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/67723/tom.wav' },
+            { name: 'Clap', color: '#FFC107', url: 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/67723/clap.wav' },
+            { name: 'Ride', color: '#795548', url: 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/67723/ride.wav' },
+        ];
+
+        const sequencer = document.getElementById('sequencer');
+        const playPauseButton = document.getElementById('playPause');
+        const bpmInput = document.getElementById('bpm');
+        const swingInput = document.getElementById('swing');
+        const swingValueDisplay = document.getElementById('swingValue');
+        const savePatternButton = document.getElementById('savePattern');
+        const loadPatternButton = document.getElementById('loadPattern');
+        const clearPatternButton = document.getElementById('clearPattern');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const errorMessage = document.getElementById('error-message');
+        const loadPatternModal = document.getElementById('loadPatternModal');
+        const patternList = document.getElementById('patternList');
+        const closeModal = document.getElementsByClassName('close')[0];
+
+        let sequence = Array(drumSounds.length).fill().map(() => Array(16).fill(false));
+        let isPlaying = false;
+        let currentStep = 0;
+        let intervalId = null;
+        let sounds = {};
+        let soundsLoaded = 0;
+        let loadingErrors = [];
+        let swingAmount = 0;
+
+        // Web Audio API context
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let masterGainNode = audioContext.createGain();
+        masterGainNode.connect(audioContext.destination);
+
+        function initializeSounds() {
+            drumSounds.forEach(sound => {
+                sounds[sound.name] = new Howl({
+                    src: [sound.url],
+                    onload: () => {
+                        soundsLoaded++;
+                        checkAllSoundsLoaded();
+                    },
+                    onloaderror: () => {
+                        loadingErrors.push(sound.name);
+                        soundsLoaded++;
+                        checkAllSoundsLoaded();
+                    }
+                });
+            });
+        }
+
+        function checkAllSoundsLoaded() {
+            if (soundsLoaded + loadingErrors.length === drumSounds.length) {
+                loadingOverlay.style.display = 'none';
+                createSequencer();
+                if (loadingErrors.length > 0) {
+                    errorMessage.textContent = `Failed to load sounds: ${loadingErrors.join(', ')}. The drum machine may not function properly.`;
+                }
+            }
+        }
+
+        function createSequencer() {
+            drumSounds.forEach((sound, index) => {
+                const row = document.createElement('div');
+                row.className = 'sequencer-row';
+                
+                const drumName = document.createElement('div');
+                drumName.className = 'drum-name';
+                drumName.textContent = sound.name;
+                drumName.style.color = sound.color;
+                row.appendChild(drumName);
+
+                for (let i = 0; i < 16; i++) {
+                    const step = document.createElement('div');
+                    step.className = 'step';
+                    step.addEventListener('click', () => {
+                        toggleStep(index, i);
+                        playSound(sound.name);
+                    });
+                    row.appendChild(step);
+                }
+
+                const volumeControl = document.createElement('div');
+                volumeControl.className = 'volume-control';
+                volumeControl.innerHTML = `
+                    <input type="range" min="0" max="1" step="0.1" value="0.5" 
+                           oninput="changeVolume('${sound.name}', this.value)">
+                `;
+                row.appendChild(volumeControl);
+
+                sequencer.appendChild(row);
+            });
+        }
+
+        function toggleStep(row, col) {
+            sequence[row][col] = !sequence[row][col];
+            updateSequencerUI();
+        }
+
+        function updateSequencerUI() {
+            const steps = document.querySelectorAll('.step');
+            sequence.forEach((row, rowIndex) => {
+                row.forEach((isActive, colIndex) => {
+                    const stepIndex = rowIndex * 16 + colIndex;
+                    steps[stepIndex].className = `step${isActive ? ' active' : ''}${colIndex === currentStep ? ' current' : ''}`;
+                });
+            });
+        }
+
+        function playSound(soundName) {
+            if (sounds[soundName] && sounds[soundName].state() === 'loaded') {
+                const sound = sounds[soundName].play();
+                sounds[soundName].once('play', () => {
+                    const node = sounds[soundName]._sounds[sound]._node;
+                    const source = audioContext.createMediaElementSource(node);
+                    applyEffects(source);
+                });
+            } else {
+                console.warn(`Sound ${soundName} not loaded or unavailable`);
+            }
+        }
+
+        function changeVolume(soundName, volume) {
+            if (sounds[soundName]) {
+                sounds[soundName].volume(parseFloat(volume));
+            }
+        }
+
+        function playPause() {
+            isPlaying = !isPlaying;
+            playPauseButton.textContent = isPlaying ? 'Stop' : 'Play';
+            if (isPlaying) {
+                currentStep = 0;
+                play();
+            } else {
+                clearInterval(intervalId);
+            }
+        }
+
+        function play() {
+            const bpm = parseInt(bpmInput.value);
+            const msPerBeat = 60000 / bpm;
+            const msPerStep = msPerBeat / 4; // 16th notes
+
+            clearInterval(intervalId);
+            intervalId = setInterval(() => {
+                const swingAdjustment = currentStep % 2 === 1 ? (swingAmount * msPerStep / 100) : 0;
+                
+                setTimeout(() => {
+                    sequence.forEach((row, index) => {
+                        if (row[currentStep]) {
+                            playSound(drumSounds[index].name);
+                        }
+                    });
+                    currentStep = (currentStep + 1) % 16;
+                    updateSequencerUI();
+                }, swingAdjustment);
+            }, msPerStep);
+        }
+
+        function savePattern() {
+            const patternName = prompt("Enter a name for this pattern:");
+            if (patternName) {
+                localStorage.setItem('drumPattern_' + patternName, JSON.stringify(sequence));
+                alert(`Pattern "${patternName}" saved!`);
+            }
+        }
+
+        function showLoadPatternModal() {
+            patternList.innerHTML = '';
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('drumPattern_')) {
+                    const li = document.createElement('li');
+                    li.textContent = key.replace('drumPattern_', '');
+                    li.onclick = () => loadPattern(key);
+                    patternList.appendChild(li);
+                }
+            }
+            loadPatternModal.style.display = 'block';
+        }
+
+        function loadPattern(patternKey) {
+            const savedPattern = localStorage.getItem(patternKey);
+            if (savedPattern) {
+                sequence = JSON.parse(savedPattern);
+                updateSequencerUI();
+                loadPatternModal.style.display = 'none';
+            }
+        }
+
+        function clearPattern() {
+            sequence = Array(drumSounds.length).fill().map(() => Array(16).fill(false));
+            updateSequencerUI();
+        }
+
+        function updateSwing() {
+            swingAmount = parseInt(swingInput.value);
+            swingValueDisplay.textContent = `${swingAmount}%`;
+            if (isPlaying) {
+                play(); // Restart playback with new swing setting
+            }
+        }
+
+        // Kaoss Pad関連のコード
+        const kaossPad = document.getElementById('kaoss-pad');
+        const kaossCursor = document.getElementById('kaoss-cursor');
+        let isKaossPadActive = false;
+        let currentFilterFreq = 1000;
+        let currentDelayTime = 0;
+
+        kaossPad.addEventListener('mousedown', activateKaossPad);
+        kaossPad.addEventListener('mousemove', updateKaossPad);
+        kaossPad.addEventListener('mouseup', deactivateKaossPad);
+        kaossPad.addEventListener('mouseleave', deactivateKaossPad);
+
+        // タッチデバイス用のイベントリスナー
+        kaossPad.addEventListener('touchstart', activateKaossPad);
+        kaossPad.addEventListener('touchmove', updateKaossPad);
+        kaossPad.addEventListener('touchend', deactivateKaossPad);
+
+        function activateKaossPad(e) {
+            isKaossPadActive = true;
+            updateKaossPad(e);
+        }
+
+        function deactivateKaossPad() {
+            isKaossPadActive = false;
+        }
+
+        function updateKaossPad(e) {
+            if (!isKaossPadActive) return;
+
+            const rect = kaossPad.getBoundingClientRect();
+            const x = (e.clientX || e.touches[0].clientX) - rect.left;
+            const y = (e.clientY || e.touches[0].clientY) - rect.top;
+
+            const xPercent = Math.max(0, Math.min(1, x / rect.width));
+            const yPercent = Math.max(0, Math.min(1, y / rect.height));
+
+            kaossCursor.style.left = `${x}px`;
+            kaossCursor.style.top = `${y}px`;
+
+            updateEffects(xPercent, yPercent);
+        }
+
+        function updateEffects(x, y) {
+            // フィルター周波数の更新（X軸）
+            const minFreq = 20;
+            const maxFreq = 20000;
+            currentFilterFreq = minFreq * Math.pow(maxFreq / minFreq, x);
+
+            // ディレイ時間の更新（Y軸）
+            const minDelay = 0;
+            const maxDelay = 1;
+            currentDelayTime = minDelay + (maxDelay - minDelay) * (1 - y);
+        }
+
+        function applyEffects(source) {
+            const filter = audioContext.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(currentFilterFreq, audioContext.currentTime);
+
+            const delay = audioContext.createDelay();
+            delay.delayTime.setValueAtTime(currentDelayTime, audioContext.currentTime);
+
+            const feedback = audioContext.createGain();
+            feedback.gain.setValueAtTime(0.4, audioContext.currentTime);
+
+            source.connect(filter);
+            filter.connect(delay);
+            delay.connect(feedback);
+            feedback.connect(delay);
+            delay.connect(masterGainNode);
+            filter.connect(masterGainNode);
+        }
+
+        playPauseButton.addEventListener('click', playPause);
+        bpmInput.addEventListener('change', () => {
+            if (isPlaying) {
+                play(); // Restart playback with new BPM
+            }
+        });
+        savePatternButton.addEventListener('click', savePattern);
+        loadPatternButton.addEventListener('click', showLoadPatternModal);
+        clearPatternButton.addEventListener('click', clearPattern);
+        swingInput.addEventListener('input', updateSwing);
+        closeModal.onclick = () => loadPatternModal.style.display = 'none';
+        window.onclick = (event) => {
+            if (event.target == loadPatternModal) {
+                loadPatternModal.style.display = 'none';
+            }
+        };
+
+        initializeSounds();
+    </script>
+</body>
+</html>
